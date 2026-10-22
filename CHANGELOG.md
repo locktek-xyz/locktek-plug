@@ -56,6 +56,14 @@ Fixes from the pre-release review, before anything was published:
 - **Keys and RPC API keys stay out of errors.** An invalid private key is no longer
   echoed (ethers includes the value in its error); RPC URLs are reduced to scheme and
   host in errors, logs, and `health_check`.
+- **`parseDerivationPath` and `validateDerivationPath` are strict.** Each index must be
+  a whole decimal number below 2^31, hardened exactly where BIP-44 says. Before,
+  `parseInt` accepted `0x10`, `1.5`, `-1`, and `4'4`, so the validator approved paths
+  the signer rejects and the parser returned indices other than the ones written.
+- **`locktek init` no longer writes through a symlink.** It checked for an existing
+  config and then wrote, so a dangling symlink at `locktek.config.ts` sent the write to
+  wherever it pointed. The write now fails if the name exists (`--force` still
+  overwrites).
 - **Dependencies:** `@modelcontextprotocol/sdk` 1.32, better-auth peer `>=1.6.33`,
   vitest 3.2, and pinned overrides for vulnerable transitive packages. `pnpm audit
 --prod` reports nothing high or critical.

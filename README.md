@@ -243,12 +243,12 @@ paths, not a proof that nothing can leak.
 
 | Package                | Tests | Statements |
 | ---------------------- | ----: | ---------: |
-| `@locktek/core`        |   358 |      91.3% |
+| `@locktek/core`        |   375 |      91.4% |
 | `@locktek/better-auth` |    84 |      98.6% |
 | `@locktek/mcp-server`  |    81 |      91.4% |
-| `@locktek/cli`         |    66 |      89.4% |
+| `@locktek/cli`         |    68 |      89.1% |
 
-**589 tests, zero network calls.** Coverage thresholds are enforced in CI. The suite is
+**608 tests, zero network calls.** Coverage thresholds are enforced in CI. The suite is
 weighted toward failure paths — timeouts, retries, concurrent access, partial writes —
 because that is where money is lost. The README's examples for unit conversion, wallet
 creation and recovery, `registerChain`, and testnet mode are mirrored by tests in

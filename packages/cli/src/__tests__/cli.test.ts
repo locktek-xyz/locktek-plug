@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Command } from 'commander';
 import { execSync } from 'node:child_process';
-import { existsSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createProgram } from '../cli.js';
@@ -476,6 +476,30 @@ describe('init command', () => {
 
     const errOutput = stripAnsi(stderrCapture.output);
     expect(errOutput).toContain('already exists');
+  });
+
+  // A dangling symlink is invisible to existsSync, so a check-then-write follows it and
+  // creates the file wherever it points. The write itself must refuse an existing name.
+  it('never writes through a symlink planted at locktek.config.ts', async () => {
+    const target = join(tmpDir, 'elsewhere.ts');
+    symlinkSync(target, join(tmpDir, 'locktek.config.ts'));
+    const program = createProgram();
+    program.exitOverride();
+
+    await program.parseAsync(['node', 'locktek', 'init']);
+
+    expect(existsSync(target)).toBe(false);
+    expect(stripAnsi(stderrCapture.output)).toContain('already exists');
+  });
+
+  it('--force overwrites an existing config', async () => {
+    writeFileSync(join(tmpDir, 'locktek.config.ts'), 'old');
+    const program = createProgram();
+    program.exitOverride();
+
+    await program.parseAsync(['node', 'locktek', 'init', '--force']);
+
+    expect(readFileSync(join(tmpDir, 'locktek.config.ts'), 'utf-8')).toContain('defaultChain');
   });
 
   it('generated config includes the LocktekOptions type import', async () => {
