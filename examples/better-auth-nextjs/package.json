@@ -13,7 +13,7 @@
     "@locktek/core": "workspace:*",
     "better-auth": "~1.6.33",
     "better-sqlite3": "^12.11.1",
-    "next": "15.5.27",
+    "next": "16.4.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
