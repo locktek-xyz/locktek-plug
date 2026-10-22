@@ -34,6 +34,9 @@ updates:
           - '@vitest/*'
           - 'husky'
         update-types: ['minor', 'patch']
+      # Next refuses to build unless react and react-dom are the exact same version.
+      react:
+        patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
     ignore:
       - dependency-name: '*'
         update-types: ['version-update:semver-major']
