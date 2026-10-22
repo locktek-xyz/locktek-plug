@@ -99,6 +99,37 @@ describe('derivation', () => {
     it('rejects invalid path', () => {
       expect(() => parseDerivationPath('invalid')).toThrow();
     });
+
+    it('accepts the largest index BIP-32 allows in each position', () => {
+      const parsed = parseDerivationPath("m/44'/60'/2147483647'/0/2147483647");
+
+      expect(parsed.account).toBe(2147483647);
+      expect(parsed.addressIndex).toBe(2147483647);
+    });
+
+    // Each of these used to parse to some number (often a different index than the one
+    // written), so a path the signer would refuse, or read differently, passed validation.
+    it.each([
+      ["m/44'/60'/0'/0/0x10", 'hex index'],
+      ["m/44'/60'/0'/0/1.5", 'fractional index'],
+      ["m/44'/60'/0'/0/1e3", 'exponent'],
+      ["m/44'/60'/0'/0/-1", 'negative index'],
+      ["m/44'/60'/0'/0/ 1", 'whitespace'],
+      ["m/44'/60'/0'/0/", 'empty index'],
+      ["m/44'/60'/0'/0/abc", 'not a number'],
+      ["m/4'4'/60'/0'/0/0", 'apostrophe inside the number'],
+      ["m/44''/60'/0'/0/0", 'doubled apostrophe'],
+      ["m/44/60'/0'/0/0", 'purpose not hardened'],
+      ["m/44'/60/0'/0/0", 'coin type not hardened'],
+      ["m/44'/60'/0/0/0", 'account not hardened'],
+      ["m/44'/60'/0'/0'/0", 'change hardened'],
+      ["m/44'/60'/0'/0/0'", 'address index hardened'],
+      ["m/44'/60'/0'/0/2147483648", 'index beyond 2^31 - 1'],
+      ["m/44'/60'/2147483648'/0/0", 'hardened index beyond 2^31 - 1'],
+    ])('rejects %s (%s)', (path) => {
+      expect(() => parseDerivationPath(path)).toThrow(/Invalid derivation path/);
+      expect(validateDerivationPath(path)).toBe(false);
+    });
   });
 
   describe('validateDerivationPath', () => {

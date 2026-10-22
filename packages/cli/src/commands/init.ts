@@ -4,6 +4,9 @@ import type { Command } from 'commander';
 import { ALL_CHAINS } from '@locktek/core';
 import { success, error, info, warn } from '../utils/output.js';
 
+const ALREADY_EXISTS = (file: string): string =>
+  `${file} already exists. Use --force to overwrite.`;
+
 function buildConfigContent(chains: readonly string[]): string {
   const chainList = chains.map((c) => `    '${c}',`).join('\n');
   // LocktekOptions rather than LocktekConfig: it includes `policy`, so adding spend
@@ -29,22 +32,14 @@ export function registerInitCommand(program: Command): void {
     .option('--chains <chains>', 'Comma-separated list of chains to enable', 'ethereum-sepolia')
     .option('--force', 'Overwrite existing config file', false)
     .action((options: { chains: string; force: boolean }) => {
-      const tsConfigPath = resolve(process.cwd(), 'locktek.config.ts');
-      const jsConfigPath = resolve(process.cwd(), 'locktek.config.js');
-      const existingConfig = existsSync(tsConfigPath)
-        ? tsConfigPath
-        : existsSync(jsConfigPath)
-          ? jsConfigPath
-          : null;
+      const configPath = resolve(process.cwd(), 'locktek.config.ts');
 
-      if (existingConfig && !options.force) {
-        warn(
-          `${existingConfig === tsConfigPath ? 'locktek.config.ts' : 'locktek.config.js'} already exists. Use --force to overwrite.`,
-        );
+      // The loader reads a .ts config before a .js one, so writing one would silently
+      // replace the settings in an existing locktek.config.js.
+      if (!options.force && existsSync(resolve(process.cwd(), 'locktek.config.js'))) {
+        warn(ALREADY_EXISTS('locktek.config.js'));
         return;
       }
-
-      const configPath = tsConfigPath;
 
       const requestedChains = options.chains.split(',').map((c) => c.trim());
 
@@ -70,7 +65,16 @@ export function registerInitCommand(program: Command): void {
       }
 
       const content = buildConfigContent(validChains);
-      writeFileSync(configPath, content, 'utf-8');
+      // 'wx' makes the existence check and the write one step: it fails if anything,
+      // including a dangling symlink, already has the name. Checking first and then
+      // writing would follow a symlink created in between.
+      try {
+        writeFileSync(configPath, content, { encoding: 'utf-8', flag: options.force ? 'w' : 'wx' });
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+        warn(ALREADY_EXISTS('locktek.config.ts'));
+        return;
+      }
       success(`Created ${configPath}`);
       info(`Chains enabled: ${validChains.join(', ')}`);
     });

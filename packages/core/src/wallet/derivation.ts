@@ -78,6 +78,27 @@ export function getCoinType(chain: Chain): BIP44CoinType {
   return coinType;
 }
 
+// BIP-32 indices are 31 bits; the top bit is what marks an index as hardened.
+const MAX_INDEX = 0x7fffffff;
+const HARDENED_SEGMENT = /^(\d+)'$/;
+const NORMAL_SEGMENT = /^(\d+)$/;
+
+function invalidPath(path: string): LocktekError {
+  return new LocktekError(
+    `Invalid derivation path: "${path}". Expected BIP-44 format: m/purpose'/coinType'/account'/change/addressIndex, with whole-number indices below 2^31 (e.g. m/44'/60'/0'/0/0).`,
+    ErrorCode.INVALID_CONFIG,
+  );
+}
+
+// The whole segment must match: parseInt would read "0x10" as 0 and "4'4" as 4, so a
+// path the signer rejects, or derives differently, would pass as valid.
+function parseIndex(segment: string, hardened: boolean, path: string): number {
+  const match = (hardened ? HARDENED_SEGMENT : NORMAL_SEGMENT).exec(segment);
+  const index = match ? Number(match[1]) : NaN;
+  if (!Number.isSafeInteger(index) || index > MAX_INDEX) throw invalidPath(path);
+  return index;
+}
+
 export function parseDerivationPath(path: string): {
   purpose: number;
   coinType: number;
@@ -86,19 +107,15 @@ export function parseDerivationPath(path: string): {
   addressIndex: number;
 } {
   const parts = path.split('/');
-  if (parts[0] !== 'm' || parts.length !== 6) {
-    throw new LocktekError(
-      `Invalid derivation path: "${path}". Expected BIP-44 format: m/purpose'/coinType'/account'/change/addressIndex (e.g. m/44'/60'/0'/0/0).`,
-      ErrorCode.INVALID_CONFIG,
-    );
-  }
+  if (parts[0] !== 'm' || parts.length !== 6) throw invalidPath(path);
+  const [, purpose, coinType, account, change, addressIndex] = parts;
 
   return {
-    purpose: parseInt(parts[1].replace("'", '')),
-    coinType: parseInt(parts[2].replace("'", '')),
-    account: parseInt(parts[3].replace("'", '')),
-    change: parseInt(parts[4]),
-    addressIndex: parseInt(parts[5]),
+    purpose: parseIndex(purpose, true, path),
+    coinType: parseIndex(coinType, true, path),
+    account: parseIndex(account, true, path),
+    change: parseIndex(change, false, path),
+    addressIndex: parseIndex(addressIndex, false, path),
   };
 }
 
