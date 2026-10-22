@@ -1,4 +1,15 @@
 version: 2
+
+# Shared by both ecosystems below.
+#
+# cooldown: a release must be 14 days old before it is proposed. Most malicious
+# versions are found and pulled within days of publication. Security updates are
+# never delayed; cooldown only applies to routine version updates.
+#
+# ignore semver-major: a major version is a migration, not an update, so it is done
+# by hand, on purpose. Dependabot alerts still report a vulnerable version, and CI's
+# dependency audit fails on any high-severity production advisory, so a fix that only
+# exists in a new major still surfaces.
 updates:
   - package-ecosystem: npm
     directory: '/'
@@ -7,8 +18,11 @@ updates:
       day: monday
     open-pull-requests-limit: 10
     labels: ['dependencies']
+    cooldown:
+      default-days: 14
     groups:
-      # One PR for the toolchain instead of six.
+      # One PR for the toolchain instead of six. Crypto and chain dependencies
+      # (ethers, tronweb) stay out of every group so each is reviewed on its own.
       dev-tooling:
         patterns:
           - 'eslint*'
@@ -21,10 +35,7 @@ updates:
           - 'husky'
         update-types: ['minor', 'patch']
     ignore:
-      # Crypto and chain dependencies are reviewed one at a time, deliberately.
-      - dependency-name: 'ethers'
-        update-types: ['version-update:semver-major']
-      - dependency-name: 'tronweb'
+      - dependency-name: '*'
         update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
@@ -32,3 +43,12 @@ updates:
     schedule:
       interval: weekly
     labels: ['dependencies', 'ci']
+    cooldown:
+      default-days: 14
+    groups:
+      # init and analyze must run the same version, so they move together.
+      codeql:
+        patterns: ['github/codeql-action*']
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
