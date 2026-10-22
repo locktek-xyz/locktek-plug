@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@locktek/core": "workspace:*",
-    "commander": "^13.0.0",
+    "commander": "^15.0.0",
     "jiti": "^2.4.0"
   },
   "devDependencies": {
