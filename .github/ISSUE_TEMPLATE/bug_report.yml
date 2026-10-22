@@ -1,0 +1,71 @@
+name: Bug report
+description: Something behaves differently than documented.
+labels: ['bug', 'needs-triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not report a security vulnerability here.** Follow
+        [SECURITY.md](https://github.com/locktek-xyz/locktek-plug/blob/main/SECURITY.md)
+        instead — a public issue tells an attacker before it tells us.
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package
+      options:
+        - '@locktek/core'
+        - '@locktek/mcp-server'
+        - '@locktek/better-auth'
+        - '@locktek/cli'
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: '0.1.0'
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you observe, and what did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: >
+        The smallest code or command that shows the problem. A reproduction we can run
+        is worth more than a paragraph of description.
+      render: typescript
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: 'Node version, OS, chain, and — if relevant — MCP host or auth setup.'
+      placeholder: |
+        Node: 20.11.0
+        OS: macOS 15.1
+        Chain: ethereum-sepolia
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error output
+      description: >
+        Paste the full error. **Redact private keys, mnemonics, and encryption keys** —
+        the SDK redacts them in its own errors, but your surrounding code may not.
+      render: shell

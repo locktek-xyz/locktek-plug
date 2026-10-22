@@ -1,0 +1,34 @@
+name: Feature request
+description: Propose a capability the SDK does not have yet.
+labels: ['enhancement', 'needs-triage']
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >
+        What are you trying to do that you cannot do today? Describe the situation, not
+        the solution — it often changes what the right solution is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What API or behavior would solve it? Sketch the call site if you can.
+      render: typescript
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: Workarounds you have already attempted, and why they fall short.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This would move funds or change signing behavior
+        - label: I am willing to open a pull request for this

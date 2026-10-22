@@ -1,0 +1,59 @@
+{
+  "name": "@locktek/cli",
+  "version": "0.1.0",
+  "description": "Experimental, testnet-only Locktek CLI — create wallets, check balances, and send transactions from the terminal",
+  "type": "module",
+  "module": "./dist/index.js",
+  "bin": {
+    "locktek": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@locktek/core": "workspace:*",
+    "commander": "^13.0.0",
+    "jiti": "^2.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.7"
+  },
+  "keywords": [
+    "cli",
+    "wallet",
+    "blockchain",
+    "locktek"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/locktek-xyz/locktek-plug.git",
+    "directory": "packages/cli"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

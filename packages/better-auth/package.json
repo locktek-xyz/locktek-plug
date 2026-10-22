@@ -1,0 +1,79 @@
+{
+  "name": "@locktek/better-auth",
+  "version": "0.1.0",
+  "description": "Experimental, testnet-only BetterAuth plugin that provisions an encrypted wallet for each user at signup",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./client": {
+      "import": {
+        "types": "./dist/client.d.ts",
+        "default": "./dist/client.js"
+      },
+      "require": {
+        "types": "./dist/client.d.cts",
+        "default": "./dist/client.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@better-fetch/fetch": "1.3.1",
+    "@locktek/core": "workspace:*",
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "better-auth": ">=1.6.33 <2"
+  },
+  "devDependencies": {
+    "better-auth": "~1.6.33",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.7"
+  },
+  "keywords": [
+    "better-auth",
+    "wallet",
+    "plugin",
+    "authentication",
+    "locktek"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/locktek-xyz/locktek-plug.git",
+    "directory": "packages/better-auth"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

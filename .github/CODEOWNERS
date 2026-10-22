@@ -1,0 +1,12 @@
+# Default owner for everything in the repository.
+*                               @m-marcel
+
+# Anything that touches key material, signing, or fund movement needs an explicit
+# review from a maintainer — these are the paths where a mistake costs money.
+/packages/core/src/encryption/  @m-marcel
+/packages/core/src/wallet/      @m-marcel
+/packages/core/src/adapters/    @m-marcel
+/packages/core/src/policy/      @m-marcel
+/packages/core/src/tx/          @m-marcel
+/SECURITY.md                    @m-marcel
+/.github/workflows/             @m-marcel

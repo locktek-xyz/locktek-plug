@@ -1,0 +1,7 @@
+packages:
+  - 'packages/*'
+  # The example uses `workspace:*` to depend on the packages, which only resolves
+  # inside the workspace. Leaving it out meant `pnpm install` never installed it and
+  # nothing ever compiled it — so the first thing a new user runs was also the least
+  # tested thing in the repository.
+  - 'examples/*'

@@ -1,0 +1,38 @@
+name: Chain support
+description: Request support for a blockchain the SDK does not ship.
+labels: ['chain-support', 'needs-triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        You may not need us. `registerChain()` lets you add a chain from your own
+        codebase without forking — see the "Adding a chain" section of the
+        `@locktek/core` README. Open this issue if the chain needs a new adapter family
+        (a signing scheme or address format the EVM and Tron adapters cannot express).
+
+  - type: input
+    id: chain
+    attributes:
+      label: Chain
+      placeholder: 'Solana'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: family
+    attributes:
+      label: Does an existing adapter fit?
+      options:
+        - 'EVM-compatible — registerChain() is probably enough'
+        - 'Needs a new adapter (different signing scheme or address format)'
+        - 'Not sure'
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: 'Signing curve, address format, RPC interface, and public RPC endpoints.'
+    validations:
+      required: true

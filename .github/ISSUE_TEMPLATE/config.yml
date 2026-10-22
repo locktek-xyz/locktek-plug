@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/locktek-xyz/locktek-plug/security/advisories/new
+    about: Report privately. Never open a public issue for a vulnerability.
+  - name: Questions and usage help
+    url: https://github.com/locktek-xyz/locktek-plug/discussions
+    about: Ask how to use the SDK, or share what you built with it.

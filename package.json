@@ -1,0 +1,61 @@
+{
+  "name": "locktek-plug",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build --filter=./packages/*",
+    "dev": "turbo run dev",
+    "test": "turbo run test --filter=./packages/*",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "prepare": "husky",
+    "test:coverage": "turbo run test:coverage --filter=./packages/*",
+    "audit": "pnpm audit --prod --audit-level high",
+    "build:example": "turbo run build --filter=better-auth-nextjs-example"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/locktek-xyz/locktek-plug.git"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^3.2.7",
+    "eslint": "^9.0.0",
+    "husky": "^9.0.0",
+    "prettier": "^3.4.0",
+    "tsup": "^8.3.0",
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.59.1",
+    "vitest": "^3.2.7"
+  },
+  "pnpm": {
+    "overrides": {
+      "axios@^1": "1.20.0",
+      "brace-expansion@^1": "1.1.21",
+      "brace-expansion@^2": "2.1.7",
+      "fast-uri@^3": "3.1.8",
+      "follow-redirects@^1": "1.16.1",
+      "form-data@^4": "4.0.6",
+      "hono@^4": "4.13.13",
+      "ip-address@^10": "10.7.3",
+      "js-yaml@^4": "4.3.2",
+      "kysely@^0.28": "0.28.17",
+      "nanoid@^3": "3.3.20",
+      "postcss@^8": "8.5.29",
+      "proxy-addr@^2": "2.0.8",
+      "set-cookie-parser@^3": "3.1.2",
+      "sharp@^0.35": "0.35.5",
+      "source-map-js@^1": "1.2.2",
+      "tinypool": "2.2.0",
+      "vite": "6.4.4",
+      "ws@^8": "8.22.0",
+      "zod@^4": "4.6.5"
+    }
+  }
+}

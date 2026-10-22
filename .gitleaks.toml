@@ -1,0 +1,13 @@
+# Default gitleaks rules, plus an allowlist for values that look like keys but
+# are public on-chain contract addresses used as test fixtures. Allowlisted by
+# exact value, never by path, so a real key added to a test file still fails.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Public token contract addresses (not secrets)"
+regexTarget = "secret"
+regexes = [
+  '''^0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48$''', # USDC, Ethereum mainnet
+  '''^TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8$''',         # USDC, TRON mainnet
+]

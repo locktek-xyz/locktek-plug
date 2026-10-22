@@ -1,0 +1,13 @@
+# Secrets first. A leaked key in a pushed commit cannot be recalled, so this
+# runs before anything slower. Scans only what is staged.
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --pre-commit --staged --redact --verbose || exit 1
+else
+  # Contributors without gitleaks are not blocked; CI's secret-scan job is the
+  # gate for them. Maintainers should install it: brew install gitleaks
+  echo "warning: gitleaks not installed, staged files were not scanned for secrets" >&2
+fi
+
+# Catch locally what CI would catch, so a type error costs seconds rather than a
+# push-and-wait round trip. Turborepo caches these, so repeat runs are fast.
+pnpm lint && pnpm format:check && pnpm typecheck
