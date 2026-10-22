@@ -29,7 +29,7 @@
   "dependencies": {
     "@locktek/core": "workspace:*",
     "commander": "^13.0.0",
-    "jiti": "^2.4.0"
+    "jiti": "^2.7.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
