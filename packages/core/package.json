@@ -34,7 +34,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "ethers": "^6.15.0",
+    "ethers": "^6.17.0",
     "tronweb": "^6.5.1",
     "zod": "^3.24.0"
   },
