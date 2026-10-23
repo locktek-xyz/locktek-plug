@@ -11,7 +11,7 @@
   "dependencies": {
     "@locktek/better-auth": "workspace:*",
     "@locktek/core": "workspace:*",
-    "better-auth": "~1.6.33",
+    "better-auth": "~1.7.7",
     "better-sqlite3": "^12.11.1",
     "next": "15.5.27",
     "react": "^19.0.0",
