@@ -17,6 +17,7 @@ export enum ErrorCode {
   POLICY_VIOLATION = 'POLICY_VIOLATION',
   MAINNET_BLOCKED = 'MAINNET_BLOCKED',
   UNSUPPORTED_OPERATION = 'UNSUPPORTED_OPERATION',
+  IDEMPOTENCY_KEY_REUSED = 'IDEMPOTENCY_KEY_REUSED',
 }
 
 /** Structured error with a machine-readable {@link ErrorCode} and optional details. */

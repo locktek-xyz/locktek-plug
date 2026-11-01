@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { keccak256 } from 'ethers';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { keccak256, Transaction } from 'ethers';
 import {
   createMockProvider,
   encodeUint,
@@ -207,7 +207,8 @@ describe('EvmAdapter', () => {
       expect(tx.chainId).toBe(11155111);
       expect(txData.type).toBe(2);
       expect(txData.maxFeePerGas).toBeDefined();
-      expect(txData.nonce).toBe(5);
+      // Assigned when signing, so an unsent build never holds a nonce.
+      expect(txData.nonce).toBeUndefined();
     });
 
     it('builds a legacy (type 0) transaction on BSC, which has no EIP-1559', async () => {
@@ -262,32 +263,81 @@ describe('EvmAdapter', () => {
   });
 
   describe('nonce allocation', () => {
-    it('gives concurrent builds from one sender distinct sequential nonces', async () => {
-      script({ getTransactionCount: 7 });
+    /** Nonce of the n-th signed transaction handed to the provider. */
+    function broadcastNonce(s: ReturnType<typeof script>, n = 0): number {
+      return Transaction.from(s.calls.broadcastTransaction.mock.calls[n][0] as string).nonce;
+    }
+
+    async function funded(adapter: EvmAdapter) {
+      const wallet = await adapter.createWallet();
+      const params: TransactionParams = { from: wallet.address, to: RECIPIENT, amount: '0.001' };
+      return { params, key: wallet.privateKey! };
+    }
+
+    it('gives concurrent sends from one sender distinct sequential nonces', async () => {
+      const s = script({ getTransactionCount: 7 });
       const adapter = adapterFor('ethereum-sepolia');
+      const { params, key } = await funded(adapter);
 
       const txs = await Promise.all(
-        Array.from({ length: 5 }, () =>
-          adapter.buildTransaction({ from: SENDER, to: RECIPIENT, amount: '0.001' }),
-        ),
+        Array.from({ length: 5 }, () => adapter.buildTransaction(params)),
       );
+      await Promise.all(txs.map((tx) => adapter.signAndSend(tx, key)));
 
-      const nonces = txs.map((tx) => JSON.parse(tx.data).nonce).sort((a, b) => a - b);
+      const nonces = [0, 1, 2, 3, 4].map((n) => broadcastNonce(s, n)).sort((a, b) => a - b);
       expect(nonces).toEqual([7, 8, 9, 10, 11]);
+    });
+
+    // Regression: the nonce used to be reserved at build time. A transaction that was
+    // built and then not sent — a preview the user cancelled — held its nonce for the
+    // life of the process, and every later transfer was accepted by the node but
+    // queued behind the gap forever, never mining.
+    it('does not consume a nonce for a transaction that is built but never sent', async () => {
+      const s = script({ getTransactionCount: 0 });
+      const adapter = adapterFor('ethereum-sepolia');
+      const { params, key } = await funded(adapter);
+
+      await adapter.buildTransaction(params); // previewed, then abandoned
+      const sent = await adapter.buildTransaction(params);
+      await adapter.signAndSend(sent, key);
+
+      expect(broadcastNonce(s)).toBe(0);
+    });
+
+    it('reuses a nonce whose broadcast the node definitively refused', async () => {
+      const s = script({ getTransactionCount: 0 });
+      const adapter = adapterFor('ethereum-sepolia', { rpcPolicy: FAST });
+      const { params, key } = await funded(adapter);
+      s.setScript({
+        getTransactionCount: 0,
+        broadcast: async () => {
+          throw Object.assign(new Error('insufficient funds for gas * price + value'), {
+            code: 'INSUFFICIENT_FUNDS',
+          });
+        },
+      });
+
+      await expect(
+        adapter.signAndSend(await adapter.buildTransaction(params), key),
+      ).rejects.toThrow();
+      s.setScript({ getTransactionCount: 0 });
+      await adapter.signAndSend(await adapter.buildTransaction(params), key);
+
+      expect(broadcastNonce(s, 1)).toBe(0);
     });
 
     it('keeps an independent nonce sequence per chain for the same sender', async () => {
       const nonceManager = new NonceManager();
-      script({ getTransactionCount: 0 });
+      const s = script({ getTransactionCount: 0 });
       const sepolia = adapterFor('ethereum-sepolia', { nonceManager });
       const bsc = adapterFor('bsc-testnet', { nonceManager });
-      const params: TransactionParams = { from: SENDER, to: RECIPIENT, amount: '0.001' };
+      const { params, key } = await funded(sepolia);
 
-      await sepolia.buildTransaction(params);
-      await sepolia.buildTransaction(params);
-      const onBsc = await bsc.buildTransaction(params);
+      await sepolia.signAndSend(await sepolia.buildTransaction(params), key);
+      await sepolia.signAndSend(await sepolia.buildTransaction(params), key);
+      await bsc.signAndSend(await bsc.buildTransaction(params), key);
 
-      expect(JSON.parse(onBsc.data).nonce).toBe(0);
+      expect(broadcastNonce(s, 2)).toBe(0);
     });
 
     it('honours a caller-supplied nonce without querying the chain', async () => {
@@ -301,6 +351,200 @@ describe('EvmAdapter', () => {
 
       expect(JSON.parse(tx.data).nonce).toBe(42);
       expect(s.calls.getTransactionCount).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('send safety (review findings)', () => {
+    const HANG = () => new Promise<{ hash: string }>(() => undefined);
+
+    // Review H2: before nonces moved to signing time, resending the same built
+    // transaction re-signed the same bytes at the same nonce, so at most one could land.
+    // Allocating afresh on every call would sign a second, different transfer.
+    it('resends the same signed bytes when one built transaction is sent twice without a key', async () => {
+      const s = script({ getTransactionCount: 0, broadcast: HANG });
+      const adapter = adapterFor('ethereum-sepolia', { rpcPolicy: FAST });
+      const wallet = await adapter.createWallet();
+      const tx = await adapter.buildTransaction({
+        from: wallet.address,
+        to: RECIPIENT,
+        amount: '0.1',
+      });
+
+      await expect(adapter.signAndSend(tx, wallet.privateKey!)).rejects.toThrow(
+        /may still confirm/,
+      );
+      s.setScript({ getTransactionCount: 0 });
+      await adapter.signAndSend(tx, wallet.privateKey!);
+
+      const raws = s.calls.broadcastTransaction.mock.calls.map((c) => c[0] as string);
+      expect(raws).toHaveLength(2);
+      expect(raws[1]).toBe(raws[0]);
+    });
+
+    // Review H3: the CLI's file store reclaims a reservation after 60 s on the basis that
+    // signing is local work. Reading the nonce inside the reservation broke that.
+    it('reads the nonce before reserving the idempotency key', async () => {
+      const order: string[] = [];
+      const inner = new InMemoryIdempotencyStore();
+      const store = {
+        get: (k: string) => inner.get(k),
+        reserve: async (k: string) => {
+          order.push('reserve');
+          return inner.reserve(k);
+        },
+        set: (k: string, v: Parameters<typeof inner.set>[1]) => inner.set(k, v),
+        release: (k: string) => inner.release(k),
+      };
+      script({
+        getTransactionCount: async () => {
+          order.push('nonce');
+          return 0;
+        },
+      });
+      const adapter = adapterFor('ethereum-sepolia', { idempotencyStore: store });
+      const wallet = await adapter.createWallet();
+      const tx = await adapter.buildTransaction({
+        from: wallet.address,
+        to: RECIPIENT,
+        amount: '0.1',
+      });
+
+      await adapter.signAndSend(tx, wallet.privateKey!, { idempotencyKey: 'k' });
+
+      expect(order).toEqual(['nonce', 'reserve']);
+    });
+
+    // Review M1: a keyed retry after a timeout resends the recorded bytes, but never told
+    // the nonce manager the nonce was spent.
+    it('commits the nonce when a keyed retry rebroadcasts the recorded transaction', async () => {
+      const nonceManager = new NonceManager();
+      const commit = vi.spyOn(nonceManager, 'commit');
+      const s = script({ getTransactionCount: 3, broadcast: HANG });
+      const adapter = adapterFor('ethereum-sepolia', {
+        rpcPolicy: FAST,
+        nonceManager,
+        idempotencyStore: new InMemoryIdempotencyStore(),
+      });
+      const wallet = await adapter.createWallet();
+      const params = { from: wallet.address, to: RECIPIENT, amount: '0.1' };
+
+      await expect(
+        adapter.signAndSend(await adapter.buildTransaction(params), wallet.privateKey!, {
+          idempotencyKey: 'k',
+        }),
+      ).rejects.toThrow();
+      s.setScript({ getTransactionCount: 3 });
+      await adapter.signAndSend(await adapter.buildTransaction(params), wallet.privateKey!, {
+        idempotencyKey: 'k',
+      });
+
+      expect(commit).toHaveBeenCalledWith(expect.any(String), 3);
+    });
+
+    // Review M3: the fingerprint must describe what is signed, not the advisory params.
+    it('refuses a key reused with transaction data edited to a different recipient', async () => {
+      script({ getTransactionCount: 0 });
+      const adapter = adapterFor('ethereum-sepolia', {
+        idempotencyStore: new InMemoryIdempotencyStore(),
+      });
+      const wallet = await adapter.createWallet();
+      const tx = await adapter.buildTransaction({
+        from: wallet.address,
+        to: RECIPIENT,
+        amount: '0.1',
+      });
+      await adapter.signAndSend(tx, wallet.privateKey!, { idempotencyKey: 'k' });
+
+      const edited = { ...tx, data: tx.data.replace(RECIPIENT, SENDER) };
+
+      await expect(
+        adapter.signAndSend(edited, wallet.privateKey!, { idempotencyKey: 'k' }),
+      ).rejects.toMatchObject({ code: ErrorCode.IDEMPOTENCY_KEY_REUSED });
+    });
+
+    it('treats a token transfer as the same request whether or not params.data was passed', async () => {
+      const s = script({ getTransactionCount: 0 });
+      const adapter = adapterFor('ethereum-sepolia', {
+        idempotencyStore: new InMemoryIdempotencyStore(),
+      });
+      const wallet = await adapter.createWallet();
+      const token = {
+        from: wallet.address,
+        to: RECIPIENT,
+        amount: '5',
+        tokenAddress: TOKEN,
+        tokenDecimals: 6,
+      };
+
+      const first = await adapter.signAndSend(
+        await adapter.buildTransaction(token),
+        wallet.privateKey!,
+        {
+          idempotencyKey: 'k',
+        },
+      );
+      const again = await adapter.signAndSend(
+        await adapter.buildTransaction({ ...token, data: '0xdeadbeef' }),
+        wallet.privateKey!,
+        { idempotencyKey: 'k' },
+      );
+
+      expect(again.hash).toBe(first.hash);
+      expect(s.calls.broadcastTransaction).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('idempotency key reuse', () => {
+    it('refuses a key reused for a different transfer instead of returning the first hash', async () => {
+      const s = script({ getTransactionCount: 0 });
+      const adapter = adapterFor('ethereum-sepolia', {
+        idempotencyStore: new InMemoryIdempotencyStore(),
+      });
+      const wallet = await adapter.createWallet();
+      const base = { from: wallet.address, to: RECIPIENT };
+
+      await adapter.signAndSend(
+        await adapter.buildTransaction({ ...base, amount: '0.3' }),
+        wallet.privateKey!,
+        { idempotencyKey: 'payout-1' },
+      );
+      const different = await adapter.buildTransaction({ ...base, amount: '0.7' });
+
+      await expect(
+        adapter.signAndSend(different, wallet.privateKey!, { idempotencyKey: 'payout-1' }),
+      ).rejects.toMatchObject({ code: ErrorCode.IDEMPOTENCY_KEY_REUSED });
+      expect(s.calls.broadcastTransaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats the same transfer rebuilt with a fresh fee estimate as the same request', async () => {
+      const s = script({ getTransactionCount: 0 });
+      const adapter = adapterFor('ethereum-sepolia', {
+        idempotencyStore: new InMemoryIdempotencyStore(),
+      });
+      const wallet = await adapter.createWallet();
+      const params = { from: wallet.address, to: RECIPIENT, amount: '0.3' };
+
+      const first = await adapter.signAndSend(
+        await adapter.buildTransaction(params),
+        wallet.privateKey!,
+        {
+          idempotencyKey: 'payout-2',
+        },
+      );
+      s.setScript({
+        getTransactionCount: 1,
+        feeData: { maxFeePerGas: 99n, maxPriorityFeePerGas: 9n, gasPrice: 99n },
+      });
+      const again = await adapter.signAndSend(
+        await adapter.buildTransaction(params),
+        wallet.privateKey!,
+        {
+          idempotencyKey: 'payout-2',
+        },
+      );
+
+      expect(again.hash).toBe(first.hash);
+      expect(s.calls.broadcastTransaction).toHaveBeenCalledTimes(1);
     });
   });
 

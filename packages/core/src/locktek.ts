@@ -22,6 +22,7 @@ import type { PolicyAuditEntry, TransactionPolicy } from './policy/types.js';
 import { safeLogger, type Logger } from './observability/logger.js';
 import type { RpcPolicy } from './rpc/policy.js';
 import { NonceManager } from './tx/nonce-manager.js';
+import { parseNativeAmount } from './utils/format.js';
 import { InMemoryIdempotencyStore, type IdempotencyStore } from './tx/idempotency.js';
 
 /** Options for initialising a {@link Locktek} instance. */
@@ -243,6 +244,11 @@ export class Locktek {
     const adapter = this.getAdapter(chain);
     const decimals = await this.resolveDecimals(adapter, params, chain);
 
+    // Validate before the policy runs. Inside policy evaluation an invalid amount is
+    // reported as a policy refusal, which names the wrong cause and hides the fix
+    // (e.g. "pass 1, not 1000000000000000000") behind POLICY_VIOLATION.
+    parseNativeAmount(params.amount, decimals);
+
     this.policyEngine.assert({
       chain: chain ?? this.defaultChain,
       to: params.to,
@@ -287,7 +293,6 @@ export class Locktek {
     const resolved = chain ?? this.defaultChain;
     const adapter = this.getAdapter(chain);
     const decimals = await this.resolveDecimals(adapter, params, chain);
-    const { parseNativeAmount } = await import('./utils/format.js');
 
     const decision = this.policyEngine.check({
       chain: resolved,

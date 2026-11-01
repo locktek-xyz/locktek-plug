@@ -12,7 +12,13 @@ export interface SignedBytes {
 export interface SendSteps {
   readonly chain: string;
   readonly logger?: Logger;
-  /** Sign the transaction. Called at most once per idempotency key. */
+  /**
+   * Network work needed before signing, such as reading the nonce. Runs *before* the
+   * idempotency key is reserved, so the reservation only ever covers local signing —
+   * a store may reclaim a reservation that outlives that, and must not race a slow RPC.
+   */
+  prepare?(): Promise<void>;
+  /** Sign the transaction. Local work only; called at most once per idempotency key. */
   sign(): Promise<SignedBytes>;
   /** Broadcast signed bytes. Resending identical bytes must be harmless. */
   broadcast(raw: string): Promise<void>;
@@ -27,6 +33,12 @@ export interface SendSteps {
   wrapError(error: unknown): LocktekError;
   /** Called when the transaction certainly never reached the network (e.g. roll back a nonce). */
   onNotBroadcast?(): void;
+  /** Called once a node has accepted the broadcast (e.g. commit a nonce). */
+  onBroadcast?(): void;
+  /** Called once a node has accepted a resend of previously recorded bytes. */
+  onRebroadcast?(raw: string): void | Promise<void>;
+  /** {@link transferFingerprint} of this transfer, bound to the idempotency key. */
+  readonly fingerprint?: string;
 }
 
 /**
@@ -49,13 +61,17 @@ export async function sendOnce(
   const key = `${steps.chain}:${idempotencyKey}`;
 
   const existing = await store.get(key);
+  if (existing) assertSameTransfer(steps, existing, idempotencyKey);
   if (existing?.state === 'broadcast') {
     steps.logger?.info?.('tx.idempotent_replay', { chain: steps.chain, hash: existing.hash });
     return { hash: existing.hash };
   }
   if (existing?.state === 'pending') return resend(steps, store, key, idempotencyKey, existing);
 
+  await prepareOrThrow(steps);
+
   if (!(await store.reserve(key))) {
+    steps.onNotBroadcast?.();
     throw new LocktekError(
       `A transaction with idempotencyKey "${idempotencyKey}" is already being signed. ` +
         'Wait for it to complete rather than sending a second time.',
@@ -66,7 +82,12 @@ export async function sendOnce(
   let signed: SignedBytes;
   try {
     signed = await steps.sign();
-    await store.set(key, { hash: signed.hash, state: 'pending', rawTransaction: signed.raw });
+    await store.set(key, {
+      hash: signed.hash,
+      state: 'pending',
+      rawTransaction: signed.raw,
+      fingerprint: steps.fingerprint,
+    });
   } catch (error: unknown) {
     await store.release(key);
     steps.onNotBroadcast?.();
@@ -84,12 +105,43 @@ export async function sendOnce(
     throw outcomeUnknown(steps, error, signed.hash, idempotencyKey);
   }
 
-  await store.set(key, { hash: signed.hash, state: 'broadcast' });
+  steps.onBroadcast?.();
+  await store.set(key, { hash: signed.hash, state: 'broadcast', fingerprint: steps.fingerprint });
   steps.logger?.info?.('tx.broadcast', { chain: steps.chain, hash: signed.hash });
   return { hash: signed.hash };
 }
 
+/**
+ * One key, one transfer. Answering a different transfer with the first one's hash
+ * would report a payment that never happened — the caller asked for 0.7 and is told
+ * "sent", with the hash of a 0.3 transfer.
+ */
+function assertSameTransfer(
+  steps: SendSteps,
+  existing: { fingerprint?: string; hash: string },
+  idempotencyKey: string,
+): void {
+  if (!existing.fingerprint || !steps.fingerprint) return;
+  if (existing.fingerprint === steps.fingerprint) return;
+
+  throw new LocktekError(
+    `idempotencyKey "${idempotencyKey}" was already used for a different transfer ` +
+      `(transaction ${existing.hash}). Nothing was signed. Use a new key for a new transfer.`,
+    ErrorCode.IDEMPOTENCY_KEY_REUSED,
+  );
+}
+
+async function prepareOrThrow(steps: SendSteps): Promise<void> {
+  try {
+    await steps.prepare?.();
+  } catch (error: unknown) {
+    throw steps.wrapError(error);
+  }
+}
+
 async function sendUnkeyed(steps: SendSteps): Promise<{ hash: string }> {
+  await prepareOrThrow(steps);
+
   let signed: SignedBytes;
   try {
     signed = await steps.sign();
@@ -108,6 +160,7 @@ async function sendUnkeyed(steps: SendSteps): Promise<{ hash: string }> {
     throw outcomeUnknown(steps, error, signed.hash, undefined);
   }
 
+  steps.onBroadcast?.();
   steps.logger?.info?.('tx.broadcast', { chain: steps.chain, hash: signed.hash });
   return { hash: signed.hash };
 }
@@ -118,7 +171,7 @@ async function resend(
   store: IdempotencyStore,
   key: string,
   idempotencyKey: string,
-  record: { hash: string; rawTransaction?: string },
+  record: { hash: string; rawTransaction?: string; fingerprint?: string },
 ): Promise<{ hash: string }> {
   if (!record.rawTransaction) {
     throw outcomeUnknown(steps, undefined, record.hash, idempotencyKey);
@@ -130,7 +183,8 @@ async function resend(
     throw outcomeUnknown(steps, error, record.hash, idempotencyKey);
   }
 
-  await store.set(key, { hash: record.hash, state: 'broadcast' });
+  await steps.onRebroadcast?.(record.rawTransaction);
+  await store.set(key, { hash: record.hash, state: 'broadcast', fingerprint: record.fingerprint });
   steps.logger?.info?.('tx.rebroadcast', { chain: steps.chain, hash: record.hash });
   return { hash: record.hash };
 }
