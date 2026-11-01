@@ -658,36 +658,29 @@ describe('output utilities', () => {
 describe('E2E: built CLI', () => {
   const cliRoot = join(import.meta.dirname, '..', '..');
   const distPath = join(cliRoot, 'dist', 'index.js');
+  // Reported as skipped rather than passed when the CLI has not been built.
 
-  it('wallet create --chain ethereum-sepolia outputs a valid Ethereum address', () => {
-    // Skip if dist does not exist (build required)
-    if (!existsSync(distPath)) {
-      console.warn('Skipping E2E: dist/index.js not found. Run `pnpm build` first.');
-      return;
-    }
+  it.skipIf(!existsSync(distPath))(
+    'wallet create --chain ethereum-sepolia outputs a valid Ethereum address',
+    () => {
+      const result = execSync(`node "${distPath}" wallet create --chain ethereum-sepolia`, {
+        encoding: 'utf-8',
+        timeout: 30_000,
+        env: {
+          ...process.env,
+          // Ensure no config file interferes
+          LOCKTEK_CHAINS: 'ethereum-sepolia',
+        },
+      });
 
-    const result = execSync(`node "${distPath}" wallet create --chain ethereum-sepolia`, {
-      encoding: 'utf-8',
-      timeout: 30_000,
-      env: {
-        ...process.env,
-        // Ensure no config file interferes
-        LOCKTEK_CHAINS: 'ethereum-sepolia',
-      },
-    });
+      const cleaned = stripAnsi(result);
+      // Should contain a valid EVM address
+      expect(cleaned).toMatch(/0x[0-9a-fA-F]{40}/);
+      expect(cleaned).toContain('Wallet created');
+    },
+  );
 
-    const cleaned = stripAnsi(result);
-    // Should contain a valid EVM address
-    expect(cleaned).toMatch(/0x[0-9a-fA-F]{40}/);
-    expect(cleaned).toContain('Wallet created');
-  });
-
-  it('chains command outputs a table with all chains', () => {
-    if (!existsSync(distPath)) {
-      console.warn('Skipping E2E: dist/index.js not found. Run `pnpm build` first.');
-      return;
-    }
-
+  it.skipIf(!existsSync(distPath))('chains command outputs a table with all chains', () => {
     const result = execSync(`node "${distPath}" chains`, {
       encoding: 'utf-8',
       timeout: 10_000,

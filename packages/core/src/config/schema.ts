@@ -7,12 +7,12 @@ export const locktekConfigSchema = z
     chains: z
       .array(z.string())
       .min(1, 'At least one chain is required')
-      .refine(
-        (chains) => chains.every(isRegisteredChain),
-        (chains) => ({
-          message: `Invalid chain(s): ${chains.filter((c) => !isRegisteredChain(c)).join(', ')}. Valid chains: ${listRegisteredChains().join(', ')}`,
-        }),
-      ),
+      .refine((chains) => chains.every(isRegisteredChain), {
+        error: (issue) => {
+          const invalid = (issue.input as string[]).filter((c) => !isRegisteredChain(c));
+          return `Invalid chain(s): ${invalid.join(', ')}. Valid chains: ${listRegisteredChains().join(', ')}`;
+        },
+      }),
     defaultChain: z.string().optional(),
     encryptionKey: z.string().min(16).optional(),
     rpc: z.record(z.string(), z.string().url()).optional(),
@@ -30,12 +30,12 @@ export const locktekConfigSchema = z
     ...config,
     defaultChain: config.defaultChain ?? config.chains[0]!,
   }))
-  .refine(
-    (config) => config.chains.includes(config.defaultChain),
-    (config) => ({
-      message: `defaultChain '${config.defaultChain}' must be one of the configured chains: ${config.chains.join(', ')}`,
-    }),
-  );
+  .refine((config) => config.chains.includes(config.defaultChain), {
+    error: (issue) => {
+      const config = issue.input as { chains: string[]; defaultChain: string };
+      return `defaultChain '${config.defaultChain}' must be one of the configured chains: ${config.chains.join(', ')}`;
+    },
+  });
 
 /** Validated configuration object produced by {@link locktekConfigSchema}. */
 export type LocktekConfig = z.infer<typeof locktekConfigSchema>;
