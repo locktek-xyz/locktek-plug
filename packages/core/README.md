@@ -52,6 +52,8 @@ With an `idempotencyKey`, the transaction is signed once and its bytes are recor
 before the broadcast, so a retry resends the same transaction instead of signing a new
 one. The default store is in memory; pass `idempotencyStore` with a durable
 implementation to keep that guarantee across restarts and instances.
+A key is bound to one transfer: reusing it for a different amount, recipient, or asset
+throws `IDEMPOTENCY_KEY_REUSED` and signs nothing.
 
 ## Testnet is the default
 

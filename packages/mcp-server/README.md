@@ -7,10 +7,25 @@ each transfer by a person.
 > **Experimental. Testnet only.** Not audited, not yet on npm. Use a wallet holding only
 > testnet funds you can afford to lose.
 
-## Claude Desktop setup
+## Setup
 
-Build the repository (`pnpm install && pnpm build`), then add to
-`claude_desktop_config.json`:
+Build the repository (`pnpm install && pnpm build`).
+
+With [Claude Code](https://docs.claude.com/en/docs/claude-code), which can show the
+approval prompt, using a key for a **testnet-only** wallet:
+
+```bash
+claude mcp add locktek \
+  -e LOCKTEK_CHAINS=ethereum-sepolia \
+  -e LOCKTEK_PRIVATE_KEY=0x… \
+  -e LOCKTEK_MAX_AMOUNT_PER_TX=0.1 \
+  -e LOCKTEK_MAX_AMOUNT_PER_SESSION=0.5 \
+  -e LOCKTEK_REQUIRE_CONFIRMATION=true \
+  -- node /path/to/locktek-plug/packages/mcp-server/dist/bin.js
+```
+
+Any other MCP client takes the same command and environment. In
+`claude_desktop_config.json` it looks like this:
 
 ```json
 {
@@ -23,13 +38,22 @@ Build the repository (`pnpm install && pnpm build`), then add to
         "LOCKTEK_PRIVATE_KEY": "0x… (testnet wallet)",
         "LOCKTEK_MAX_AMOUNT_PER_TX": "0.1",
         "LOCKTEK_MAX_AMOUNT_PER_SESSION": "0.5",
-        "LOCKTEK_ALLOWED_RECIPIENTS": "0xabc…",
-        "LOCKTEK_REQUIRE_CONFIRMATION": "true"
+        "LOCKTEK_ALLOWED_RECIPIENTS": "0xabc…"
       }
     }
   }
 }
 ```
+
+> [!IMPORTANT]
+> `LOCKTEK_REQUIRE_CONFIRMATION=true` needs an MCP client that supports
+> [elicitation](https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation)
+> to show the approval prompt. Claude Code does. At the time of writing Claude Desktop
+> does not, so with that setting every transfer there is **refused** — safely, but every
+> time. In Claude Desktop, leave it unset and rely on the spend limits, the allowlist,
+> and Desktop's own prompt before each tool call — which shows the arguments the model
+> chose rather than the amount and fee the server resolved — or run the server without
+> `LOCKTEK_PRIVATE_KEY`, read-only.
 
 Configuration is validated at startup, so a mistake surfaces as a clear stderr message
 rather than a server that silently never appears. At startup the server also says on

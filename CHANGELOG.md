@@ -13,6 +13,55 @@ All four packages (`@locktek/core`, `@locktek/mcp-server`, `@locktek/better-auth
 Nothing has been published to npm yet. Everything below will ship in the first release,
 `0.1.0`. The project is **experimental and testnet only**.
 
+### Fixed
+
+Found by using the project as a reader of the launch article would — packing the
+packages, installing them into a fresh project, and running every documented flow
+against a local chain (`anvil`) and live testnets:
+
+- **An idempotency key reused for a different transfer is refused.** It used to return
+  the first transfer's hash: asked to send 0.7 under a key already used for 0.3, the CLI
+  printed `"ok": true, "amount": "0.7"` with the hash of the 0.3 transfer, and only 0.3
+  moved. Keys are now bound to a fingerprint of the transfer (chain, sender, recipient,
+  base-unit amount, token, calldata) and a mismatch throws `IDEMPOTENCY_KEY_REUSED`.
+  Rebuilding the _same_ transfer with a fresh nonce and fee still matches.
+- **A transaction that is built but never sent no longer stalls the wallet.** Nonces
+  were reserved at build time and never returned, so a cancelled preview left a gap:
+  every later transfer from that address was accepted by the node, then sat in its
+  queue and never mined, and `waitForConfirmation` blamed the RPC endpoint. Nonces are
+  now assigned at signing: the lowest nonce not already committed or in flight is used,
+  so a refused broadcast's nonce is reissued even after a later one committed. Sending
+  the same built transaction twice reuses its nonce and re-signs identical bytes, so at
+  most one can land. The nonce is read before an idempotency key is reserved, keeping
+  the CLI store's reservation window to local signing. A keyed resend commits its nonce.
+- **EVM idempotency fingerprints describe the signed transaction**, not the advisory
+  params: an edited recipient is refused, and an incidental `params.data` on a token
+  transfer no longer counts as a different request.
+- **An invalid amount is reported as `INVALID_AMOUNT`.** Through the facade and the MCP
+  tools it surfaced as `POLICY_VIOLATION` ("Policy could not be evaluated") — even with
+  no policy configured — which named the wrong cause in exactly the case the library
+  exists for: an agent passing base units.
+- **The MCP approval prompt names the asset.** "Send: 0.01" and the fee now read
+  "0.01 ETH" and "… ETH".
+- **The BetterAuth example's first sign-up no longer fails.** Its README never created
+  the database tables, so sign-up returned 500 (`no such table: user`). It now has a
+  `db:migrate` step.
+- **The README explains how to use the packages from your own project** before they
+  are on npm.
+- CLI end-to-end tests are reported as skipped, not passed, when the CLI is unbuilt.
+
+### Dependencies
+
+- `zod` 3 → 4.6.7 in every package. Zod below 4.6.6 can exhaust memory validating an
+  oversized array (GHSA-mrhx-c7xc-m3w5); zod 3 has no fixed release.
+- The example moves to `next` 15.5.28 (GHSA-2464-fhr4-w9xw, unauthenticated RCE in image
+  optimisation) and `better-auth` 1.7.14 (GHSA-965c-763c-88jm, GHSA-r4xp-prcw-77qf).
+- `@locktek/better-auth` now requires `better-auth >=1.7.7`, the first release without
+  those advisories, and no longer depends on `@better-fetch/fetch` directly. Its client
+  plugin has an explicit type, so a better-auth upgrade that changes better-fetch no
+  longer breaks the declaration build (TS2742).
+- Overrides for `follow-redirects` 1.16.2 and `body-parser` 2.4.0.
+
 ### Security
 
 Fixes from the pre-release review, before anything was published:

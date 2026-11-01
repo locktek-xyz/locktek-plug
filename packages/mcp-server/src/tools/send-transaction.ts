@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { Chain } from '@locktek/core';
+import { getNetworkConfig, type Chain } from '@locktek/core';
 import { ok, fail, requireSigningKey } from './shared.js';
 import type { ToolContext } from './shared.js';
 
@@ -44,16 +44,18 @@ export async function performTransfer(context: ToolContext, input: TransferInput
       return ok({ refused: true, rule: simulation.rule, reason: simulation.reason });
     }
 
+    // The fee is always paid in the native asset; the amount is too unless a token is named.
+    const { symbol } = getNetworkConfig(resolvedChain);
     const approval = await context.requestApproval(
       [
         'Approve this transfer?',
         '',
-        `Send:   ${simulation.amount}${input.tokenAddress ? ` of token ${input.tokenAddress}` : ''}`,
+        `Send:   ${simulation.amount}${input.tokenAddress ? ` of token ${input.tokenAddress}` : ` ${symbol}`}`,
         `        (${simulation.baseUnitAmount} base units)`,
         `From:   ${sender.address}`,
         `To:     ${input.to}`,
         `Chain:  ${resolvedChain}${context.locktek.isTestnetOnly ? ' (testnet)' : ''}`,
-        `Fee:    about ${simulation.estimatedGas?.totalFeeInToken ?? 'unknown'}`,
+        `Fee:    about ${simulation.estimatedGas?.totalFeeInToken ?? 'unknown'} ${symbol}`,
         '',
         'Approve only if you asked for exactly this transfer.',
       ].join('\n'),

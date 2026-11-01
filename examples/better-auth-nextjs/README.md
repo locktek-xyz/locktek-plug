@@ -1,6 +1,6 @@
 # BetterAuth + Locktek — Next.js Example
 
-Minimal example showing `@locktek/better-auth` integration with Next.js 15 and BetterAuth.
+Minimal example showing `@locktek/better-auth` integration with Next.js 15 and BetterAuth 1.7.
 
 Authenticated users can create HD wallets on Ethereum Sepolia and Base Sepolia, list their wallets, and check native token balances.
 
@@ -40,7 +40,17 @@ Authenticated users can create HD wallets on Ethereum Sepolia and Base Sepolia, 
    openssl rand -hex 32
    ```
 
-4. **Start the dev server**:
+4. **Create the database tables** (BetterAuth's tables and the plugin's `locktekWallet`
+   table). Run this after creating `.env` — it reads it — and again whenever you change
+   the plugin configuration:
+
+   ```bash
+   pnpm --filter better-auth-nextjs-example db:migrate
+   ```
+
+   Skipping this step makes the first sign-up fail with `no such table: user`.
+
+5. **Start the dev server**:
 
    ```bash
    pnpm --filter better-auth-nextjs-example dev

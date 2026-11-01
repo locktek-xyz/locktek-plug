@@ -95,6 +95,20 @@ git clone https://github.com/locktek-xyz/locktek-plug.git
 cd locktek-plug && pnpm install && pnpm build
 ```
 
+Then install the built packages into your own project. Packing them gives you exactly
+what a release would ship, with `@locktek/core` resolved for the packages that depend
+on it:
+
+```bash
+# in locktek-plug
+for p in core mcp-server better-auth cli; do
+  pnpm -C packages/$p pack --pack-destination "$PWD/dist-packages"
+done
+
+# in your project
+npm install ../locktek-plug/dist-packages/locktek-core-0.1.0.tgz
+```
+
 ```ts
 import { createLocktek } from '@locktek/core';
 
@@ -127,6 +141,10 @@ const { hash } = await locktek.signAndSend(tx, privateKey!, undefined, {
 });
 ```
 
+A key is bound to one transfer. Reusing it for a different one — another amount,
+recipient, or asset — throws `IDEMPOTENCY_KEY_REUSED` and signs nothing, rather than
+answering with the first transfer's hash.
+
 The default idempotency store lives in memory, so that guarantee holds for the life of
 the process. Pass `idempotencyStore` with a durable implementation (Redis, Postgres) to
 make it hold across restarts and instances; the CLI ships a file-backed one.
@@ -146,8 +164,21 @@ recovered.address === row.address; // proves you recovered the right wallet
 
 ## Give an agent a wallet
 
-Add this to `claude_desktop_config.json`, pointing at your local build, with a key for a
-**testnet-only** wallet:
+With [Claude Code](https://docs.claude.com/en/docs/claude-code), which can show the
+approval prompt, using a key for a **testnet-only** wallet:
+
+```bash
+claude mcp add locktek \
+  -e LOCKTEK_CHAINS=ethereum-sepolia \
+  -e LOCKTEK_PRIVATE_KEY=0x… \
+  -e LOCKTEK_MAX_AMOUNT_PER_TX=0.1 \
+  -e LOCKTEK_MAX_AMOUNT_PER_SESSION=0.5 \
+  -e LOCKTEK_REQUIRE_CONFIRMATION=true \
+  -- node /path/to/locktek-plug/packages/mcp-server/dist/bin.js
+```
+
+Any other MCP client takes the same command and environment. In
+`claude_desktop_config.json` it looks like this:
 
 ```json
 {
@@ -160,13 +191,22 @@ Add this to `claude_desktop_config.json`, pointing at your local build, with a k
         "LOCKTEK_PRIVATE_KEY": "0x… (a testnet wallet you can afford to lose)",
         "LOCKTEK_MAX_AMOUNT_PER_TX": "0.1",
         "LOCKTEK_MAX_AMOUNT_PER_SESSION": "0.5",
-        "LOCKTEK_ALLOWED_RECIPIENTS": "0xabc...,0xdef...",
-        "LOCKTEK_REQUIRE_CONFIRMATION": "true"
+        "LOCKTEK_ALLOWED_RECIPIENTS": "0xabc...,0xdef..."
       }
     }
   }
 }
 ```
+
+> [!IMPORTANT]
+> `LOCKTEK_REQUIRE_CONFIRMATION=true` needs an MCP client that supports
+> [elicitation](https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation)
+> to show the approval prompt. Claude Code does. At the time of writing Claude Desktop
+> does not, so with that setting every transfer there is **refused** — safely, but every
+> time. In Claude Desktop, leave it unset and rely on the spend limits, the allowlist,
+> and Desktop's own prompt before each tool call — which shows the arguments the model
+> chose rather than the amount and fee the server resolved — or run the server without
+> `LOCKTEK_PRIVATE_KEY`, read-only.
 
 The signing key is configured on the server and **never crosses the MCP transport**: no
 tool takes a private key as input or returns one. Without `LOCKTEK_PRIVATE_KEY` the
@@ -218,7 +258,10 @@ and fail over across RPC endpoints with per-endpoint cooldown.
 broadcast that timed out may already have landed. With an `idempotencyKey`, the signed
 bytes are recorded before the broadcast, so a retry resends that same transaction —
 which the network deduplicates — instead of signing a new one. The key is released only
-when the node definitively refuses the first broadcast.
+when the node definitively refuses the first broadcast. Without a key, sending the
+same built transaction object again re-signs it at the same nonce, so only one can
+land; rebuilding it makes a new transfer, so retry across rebuilds or restarts with a
+key.
 
 **Limits are checked before signing.** Per-transaction caps, per-session caps, recipient
 allow/deny lists, and read-only mode are evaluated in the policy engine when the facade
@@ -243,12 +286,12 @@ paths, not a proof that nothing can leak.
 
 | Package                | Tests | Statements |
 | ---------------------- | ----: | ---------: |
-| `@locktek/core`        |   375 |      91.4% |
+| `@locktek/core`        |   392 |      91.5% |
 | `@locktek/better-auth` |    84 |      98.6% |
 | `@locktek/mcp-server`  |    81 |      91.4% |
 | `@locktek/cli`         |    68 |      89.1% |
 
-**608 tests, zero network calls.** Coverage thresholds are enforced in CI. The suite is
+**625 tests, zero network calls.** Coverage thresholds are enforced in CI. The suite is
 weighted toward failure paths — timeouts, retries, concurrent access, partial writes —
 because that is where money is lost. The README's examples for unit conversion, wallet
 creation and recovery, `registerChain`, and testnet mode are mirrored by tests in
@@ -269,8 +312,14 @@ These are real, and each is a reason the project is testnet-only for now.
   is not decoded, a caller-supplied `tokenDecimals` is trusted, a transaction can be
   altered between `buildTransaction` and `signAndSend`, the chain adapters are exported
   and can be used directly, and fees are not capped.
-- **Nonce gaps do not heal.** If a transaction that consumed a nonce never lands, later
-  transactions from that address in the same process queue behind the gap.
+- **A broadcast with an unknown outcome holds its nonce.** Nonces are assigned at
+  signing, so a transaction that is built and never sent costs nothing, and a nonce
+  whose broadcast the node refused is reused. But when a broadcast times out, its nonce
+  is never reissued — it may still land — so if it never does, later transactions from
+  that address in the same process queue behind it until a restart.
+- **Nonces are coordinated within one process.** Two processes signing for one address —
+  including a CLI run while an earlier run's transaction is still pending — can pick the
+  same nonce; the later transaction then fails with "nonce too low".
 - **One shared scrypt salt by default.** The salt is not secret, so it does not contain a
   leaked encryption key. Use a distinct key per tenant or a KMS-backed
   `IEncryptionProvider`.

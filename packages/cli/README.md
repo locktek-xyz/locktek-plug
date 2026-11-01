@@ -51,7 +51,8 @@ locktek send --to 0xabc... --amount 0.1 --idempotency-key payout-42 --wait
 `--idempotency-key` makes a retry safe, including in a later run after a timeout or a
 crash: the key is recorded under `~/.locktek` (or `LOCKTEK_STATE_DIR`) together with the
 signed transaction, and reusing it resends that same transaction or returns its hash. It
-never signs a second one. `--wait` reports whether the transaction
+never signs a second one. Reusing a key with a different amount, recipient, or token is
+refused with `IDEMPOTENCY_KEY_REUSED`. `--wait` reports whether the transaction
 actually succeeded, rather than only that the broadcast was accepted.
 
 `locktek wallet create` does **not** print the private key by default, so keys do not
