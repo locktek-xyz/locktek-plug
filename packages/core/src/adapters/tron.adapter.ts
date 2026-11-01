@@ -21,6 +21,7 @@ import { redactUrl, scrubUrls } from '../rpc/endpoint-pool.js';
 import type { RpcPolicy } from '../rpc/policy.js';
 import type { IdempotencyStore } from '../tx/idempotency.js';
 import { sendOnce } from '../tx/send-once.js';
+import { transferFingerprint } from '../tx/fingerprint.js';
 import type { Logger } from '../observability/logger.js';
 import type { TronWeb } from 'tronweb';
 
@@ -228,6 +229,7 @@ export class TronAdapter implements ChainAdapter {
       {
         chain: this.chain,
         logger: this.logger,
+        fingerprint: transferFingerprint(tx),
         sign: () => this.sign(tx, privateKey),
         broadcast: async (raw) => {
           await this.rpc.write('signAndSend', async (url) => {

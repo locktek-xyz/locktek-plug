@@ -15,6 +15,12 @@ export interface IdempotencyRecord {
   readonly state: 'pending' | 'broadcast';
   /** The signed transaction, kept while `pending` so a retry can resend it unchanged. */
   readonly rawTransaction?: string;
+  /**
+   * {@link transferFingerprint} of the transfer this key was first used for. A reuse
+   * for a different transfer is refused rather than answered with this hash. Absent on
+   * records written before fingerprints existed; those still replay.
+   */
+  readonly fingerprint?: string;
 }
 
 /**

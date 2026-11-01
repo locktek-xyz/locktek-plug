@@ -23,6 +23,7 @@ import type { RpcPolicy } from '../rpc/policy.js';
 import { NonceManager } from '../tx/nonce-manager.js';
 import type { IdempotencyStore } from '../tx/idempotency.js';
 import { sendOnce } from '../tx/send-once.js';
+import { evmTransferFingerprint } from '../tx/fingerprint.js';
 import type { Logger } from '../observability/logger.js';
 
 const ERC20_ABI = [
@@ -66,6 +67,8 @@ export class EvmAdapter implements ChainAdapter {
 
   private readonly rpc: RpcExecutor;
   private readonly nonces: NonceManager;
+  /** Nonce assigned to each transaction object this adapter has signed, so a resend reuses it. */
+  private readonly pinnedNonces = new WeakMap<UnsignedTransaction, number>();
   private readonly idempotency: IdempotencyStore | undefined;
   private readonly logger: Logger | undefined;
   private readonly decimalsCache = new Map<string, number>();
@@ -208,21 +211,15 @@ export class EvmAdapter implements ChainAdapter {
 
     const gasEstimate = await this.estimateGas(params);
 
-    const nonce =
-      params.nonce ??
-      (await this.nonces.allocate(this.nonceScope(params.from), () =>
-        this.rpc.read('getTransactionCount', async (url) => {
-          const provider = await this.providerFor(url);
-          return provider.getTransactionCount(params.from, 'pending');
-        }),
-      ));
-
+    // The nonce is assigned when the transaction is signed, not here. A transaction
+    // that is built and then never sent — a preview someone cancels — must not hold a
+    // nonce, or every later transfer from this address queues behind the gap.
     const txData: Record<string, unknown> = {
       to,
       from: params.from,
       value,
       data,
-      nonce,
+      ...(params.nonce === undefined ? {} : { nonce: params.nonce }),
       chainId: config.chainId,
       gasLimit: params.gasLimit ?? gasEstimate.gasLimit,
     };
@@ -259,17 +256,36 @@ export class EvmAdapter implements ChainAdapter {
     privateKey: string,
     options: SendOptions = {},
   ): Promise<{ hash: string }> {
-    const nonce = this.nonceOf(tx);
     const sender = tx.params.from;
+    const scope = this.nonceScope(sender);
+    const callerNonce = this.nonceOf(tx);
+    // A nonce this adapter assigned to *this* transaction object on an earlier attempt.
+    // Reusing it means sending the same built transaction twice re-signs the same bytes
+    // at the same nonce, so at most one of them can land.
+    let nonce = callerNonce ?? this.pinnedNonces.get(tx);
 
     return sendOnce(
       {
         chain: this.chain,
         logger: this.logger,
+        fingerprint: evmTransferFingerprint(tx),
+        prepare: async () => {
+          if (nonce !== undefined) return;
+          nonce = await this.nonces.allocate(scope, () =>
+            this.rpc.read('getTransactionCount', async (url) => {
+              const provider = await this.providerFor(url);
+              return provider.getTransactionCount(sender, 'pending');
+            }),
+          );
+          this.pinnedNonces.set(tx, nonce);
+        },
         sign: async () => {
           const { ethers } = await import('ethers');
           const wallet = await this.signerFor(privateKey);
-          const raw = await wallet.signTransaction(this.hydrate(tx.data));
+          const txData = this.hydrate(tx.data);
+          txData.nonce = nonce;
+
+          const raw = await wallet.signTransaction(txData);
           return { raw, hash: ethers.keccak256(raw) };
         },
         broadcast: async (raw) => {
@@ -283,7 +299,26 @@ export class EvmAdapter implements ChainAdapter {
         isDefinitiveRejection: (error) => !isRetryableError(error),
         wrapError: (error) => this.wrapSendError(error),
         onNotBroadcast: () => {
-          if (nonce !== undefined) this.nonces.release(this.nonceScope(sender), nonce);
+          // Only a nonce this adapter assigned is returned; a caller's nonce is theirs.
+          if (nonce === undefined || callerNonce !== undefined) return;
+          this.nonces.release(scope, nonce);
+          this.pinnedNonces.delete(tx);
+        },
+        onBroadcast: () => {
+          if (nonce !== undefined) this.nonces.commit(scope, nonce);
+        },
+        onRebroadcast: async (raw) => {
+          // The broadcast already succeeded; failing to record the nonce must not turn
+          // that into an error. The worst case is a nonce held until restart.
+          try {
+            const { Transaction } = await import('ethers');
+            this.nonces.commit(scope, Transaction.from(raw).nonce);
+          } catch (error: unknown) {
+            this.logger?.warn?.('tx.nonce_commit_failed', {
+              chain: this.chain,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
         },
       },
       this.idempotency,

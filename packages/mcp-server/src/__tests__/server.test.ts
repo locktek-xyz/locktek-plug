@@ -349,6 +349,9 @@ describe('send_transaction', () => {
     const prompt = requestApproval.mock.calls[0]![0];
     expect(prompt).toContain('1000000000000000000 base units');
     expect(prompt).toContain('0x0000000000000000000000000000000000000001');
+    // A person approving "Send: 1" cannot tell 1 of what; the unit is part of the amount.
+    expect(prompt).toMatch(/Send:\s+1 ETH\b/);
+    expect(prompt).toMatch(/Fee:\s+about \S+ ETH\b/);
     expect(locktek.signAndSend).toHaveBeenCalledTimes(1);
   });
 

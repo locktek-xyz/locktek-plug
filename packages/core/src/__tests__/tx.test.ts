@@ -50,13 +50,55 @@ describe('NonceManager', () => {
     await expect(manager.allocate(ADDRESS, async () => 7)).resolves.toBe(7);
   });
 
-  it('ignores a release for a nonce that is not the most recent', async () => {
+  // Regression: a release was ignored unless it was the most recent allocation, so a
+  // refused broadcast with a later one still in flight left a permanent gap.
+  it('reuses a released nonce even while a later one is still in flight', async () => {
     const manager = new NonceManager();
     await manager.allocate(ADDRESS, async () => 7);
     await manager.allocate(ADDRESS, async () => 7);
 
     manager.release(ADDRESS, 7);
-    await expect(manager.allocate(ADDRESS, async () => 7)).resolves.toBe(9);
+    await expect(manager.allocate(ADDRESS, async () => 7)).resolves.toBe(7);
+  });
+
+  // Review H1: with "highest committed + 1" as the floor, a nonce released *after* a
+  // later one committed was skipped. The node queues the later transaction behind the
+  // hole, its pending count stays at the hole, and nothing from this address mines.
+  it('reissues a released nonce even after a later one has committed', async () => {
+    const manager = new NonceManager();
+    const a = await manager.allocate(ADDRESS, async () => 5);
+    const b = await manager.allocate(ADDRESS, async () => 5);
+    manager.commit(ADDRESS, b);
+    manager.release(ADDRESS, a);
+
+    await expect(manager.allocate(ADDRESS, async () => 5)).resolves.toBe(5);
+  });
+
+  it('skips past a committed nonce once the hole below it is filled', async () => {
+    const manager = new NonceManager();
+    await manager.allocate(ADDRESS, async () => 5);
+    const b = await manager.allocate(ADDRESS, async () => 5);
+    manager.commit(ADDRESS, b);
+    manager.release(ADDRESS, 5);
+    await manager.allocate(ADDRESS, async () => 5); // refills 5
+
+    await expect(manager.allocate(ADDRESS, async () => 5)).resolves.toBe(7);
+  });
+
+  it('keeps a committed nonce reserved when an endpoint has not seen it yet', async () => {
+    const manager = new NonceManager();
+    const nonce = await manager.allocate(ADDRESS, async () => 7);
+    manager.commit(ADDRESS, nonce);
+
+    // A load-balanced RPC can briefly report the old pending count.
+    await expect(manager.allocate(ADDRESS, async () => 7)).resolves.toBe(8);
+  });
+
+  it('never reissues a nonce whose broadcast outcome is unknown', async () => {
+    const manager = new NonceManager();
+    await manager.allocate(ADDRESS, async () => 7); // timed out: neither committed nor released
+
+    await expect(manager.allocate(ADDRESS, async () => 7)).resolves.toBe(8);
   });
 
   it('re-reads the chain after a reset', async () => {

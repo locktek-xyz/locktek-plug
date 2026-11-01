@@ -324,3 +324,41 @@ describe('signAndSend argument resolution', () => {
     );
   });
 });
+
+describe('amount validation', () => {
+  beforeEach(() => {
+    registerChain({
+      chain: FAKE_CHAIN,
+      network: FAKE_NETWORK,
+      createAdapter: () => createFakeAdapter(),
+    });
+  });
+
+  afterEach(() => {
+    unregisterChain(FAKE_CHAIN);
+  });
+
+  // Regression: an invalid amount was caught inside policy evaluation and reported as
+  // POLICY_VIOLATION ("Policy could not be evaluated") — even with no policy configured.
+  // That is the error an agent sees when it passes base units, and it names the wrong cause.
+  it.each([
+    ['base units', '1000000000000000000'],
+    ['malformed', '0.1.2'],
+    ['negative', '-1'],
+  ])('reports a %s amount as INVALID_AMOUNT, not a policy refusal', async (_label, amount) => {
+    await expect(
+      locktek().buildTransaction({ from: '0xa', to: '0xb', amount }),
+    ).rejects.toMatchObject({ code: ErrorCode.INVALID_AMOUNT });
+  });
+
+  it('does not count a rejected amount against the session cap', async () => {
+    const capped = locktek({ policy: { maxAmountPerSession: '1' } });
+
+    await expect(
+      capped.buildTransaction({ from: '0xa', to: '0xb', amount: '1000000000000000000' }),
+    ).rejects.toMatchObject({ code: ErrorCode.INVALID_AMOUNT });
+    await expect(
+      capped.buildTransaction({ from: '0xa', to: '0xb', amount: '1' }),
+    ).resolves.toBeDefined();
+  });
+});
